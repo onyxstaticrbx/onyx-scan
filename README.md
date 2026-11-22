@@ -141,7 +141,7 @@ leaves your computer.
 does not mean secure.
 
 **`onyx rules`?** Lists every rule id and what it catches, so a finding's `ONYX-L***` code can be
-matched to the page.
+looked up by rule id.
 
 **What if a finding is wrong?** Open a *wrong finding* issue with the rule id, path:line and
 one sentence. That is how the rules get better. Please don't post your place file or any
