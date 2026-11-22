@@ -1,0 +1,31 @@
+name: What should it check next?
+description: Describe an exploit or bug shape it does not catch. No game data needed.
+title: "[check next] <one line>"
+labels: ["new-check"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a wish list, not a promise about when anything ships. Describe the shape in
+        plain words, and say whether the client can trigger it. Do not post your place file,
+        credentials, or a whole script if a sentence will do.
+  - type: textarea
+    id: shape
+    attributes:
+      label: The shape
+      description: What can a client reach that it should not, and how does the exploit work?
+      placeholder: A client can call a remote that starts a minigame round for anyone...
+    validations:
+      required: true
+  - type: input
+    id: symptom
+    attributes:
+      label: The symptom a developer notices
+      placeholder: Players give themselves free currency / items are granted twice...
+  - type: dropdown
+    id: trigger
+    attributes:
+      label: Can a client trigger it?
+      options: ["Yes, from a client", "Only during normal gameplay", "Not sure"]
+    validations:
+      required: true

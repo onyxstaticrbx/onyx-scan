@@ -1,0 +1,39 @@
+name: A finding was wrong
+description: Tell us a scan finding that did not hold up, with the location. No game data needed.
+title: "[wrong finding] ONYX-L___ at path:line"
+labels: ["wrong-finding"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A finding is wrong when the rule fired but the claim does not hold on the shown code.
+        Please send **only** the file path and line, the rule id, and one sentence about why —
+        never your place file, credentials, or a whole script if it is not needed.
+  - type: input
+    id: rule
+    attributes:
+      label: Rule id
+      placeholder: ONYX-L001
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Path and line
+      placeholder: game.ServerScriptService.ShopHandler:14
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why the claim does not hold
+      description: What did the rule miss, or what did it misread?
+    validations:
+      required: true
+  - type: dropdown
+    id: version
+    attributes:
+      label: Version
+      options: ["0.2.0 or later", "older", "not sure"]
+    validations:
+      required: true

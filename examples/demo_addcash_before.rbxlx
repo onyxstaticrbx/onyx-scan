@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="4">
+  <Item class="Workspace" referent="RBX0001">
+    <Properties>
+      <string name="Name">Workspace</string>
+    </Properties>
+  </Item>
+
+  <Item class="ReplicatedStorage" referent="RBX0002">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="RemoteEvent" referent="RBX0003">
+      <Properties>
+        <string name="Name">AddCash</string>
+      </Properties>
+    </Item>
+  </Item>
+
+  <Item class="ServerScriptService" referent="RBX0010">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+
+    <Item class="Script" referent="RBX0011">
+      <Properties>
+        <string name="Name">AddCash</string>
+        <ProtectedString name="Source"><![CDATA[
+
+local Players = game:GetService("Players")
+
+Players.PlayerAdded:Connect(function(player)
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	stats.Parent = player
+	local cash = Instance.new("IntValue")
+	cash.Name = "Cash"
+	cash.Parent = stats
+end)
+
+game.ReplicatedStorage.AddCash.OnServerEvent:Connect(function(player, amount)
+	player.leaderstats.Cash.Value = player.leaderstats.Cash.Value + amount
+end)
+
+]]></ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>

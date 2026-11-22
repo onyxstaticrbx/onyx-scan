@@ -1,0 +1,59 @@
+# Publish onyx-scan to PyPI with Trusted Publishing (no API token, no secrets).
+# One-time setup, done by the operator:
+#   PyPI -> Your projects -> Publishing -> Add a new pending publisher
+#     PyPI project name: onyx-scan
+#     Owner:            <github owner>
+#     Repository:       <repo name>
+#     Workflow name:    publish.yml
+#     Environment:      pypi
+#   GitHub -> repo Settings -> Environments -> create `pypi` (no secrets needed)
+# Then publish by creating a GitHub Release whose tag is `v0.2.0` (or run "Publish" manually).
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Check the wheel contents (no test data, no tests, luau data present)
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(whl).namelist()
+          assert any(n.endswith("onyx/luau/mock.luau") for n in names), names
+          assert not any(n.startswith(("tests/", "test/")) for n in names), names
+          print("wheel ok:", whl)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
