@@ -61,3 +61,5 @@ jobs:
           if ($code -ne 1) { throw "verify should fail closed with exit 1, got $code`n$out" }
           if ($out -notmatch "not supported on Windows") { throw "verify did not explain Windows support:`n$out" }
           if ($out -match "Traceback") { throw "verify printed a traceback instead of a message:`n$out" }
+          # verify correctly exits 1; clear that expected code so pwsh does not fail the step.
+          exit 0
