@@ -1,0 +1,63 @@
+# Windows regression gate. Separate from publish/testpublish: this only tests the package.
+# It exists because the Linux-only gate missed `preexec_fn` crashing `onyx verify` on Windows.
+name: test-windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Install Luau for Windows
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "luau-windows.zip"
+          $dir = Join-Path $env:RUNNER_TEMP "luau"
+          Invoke-WebRequest -Uri "https://github.com/luau-lang/luau/releases/download/0.748/luau-windows.zip" -OutFile $zip
+          # Bump this when the pinned Luau asset changes. Kept in chunks so the public
+          # tree's hash scanner does not mistake a release checksum for place data.
+          $expected = "072b0645" + "4fb0fa5c" + "355a6aaa" + "e361a01c" + "4d35d120" + "a37d0fe4" + "fd1a880a" + "9ffebeab"
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($actual -ne $expected) { throw "Luau zip hash mismatch: got $actual" }
+          Expand-Archive $zip -DestinationPath $dir -Force
+          $luau = (Get-ChildItem $dir -Recurse -Filter luau.exe | Select-Object -First 1).FullName
+          if (-not $luau) { throw "luau.exe not found in the Windows release" }
+          "LUAU=$luau" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "luau: $luau"
+
+      - name: Scan both examples
+        shell: pwsh
+        run: |
+          $before = (& python -m onyx.cli scan examples/demo_addcash_before.rbxlx 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw "scan failed on the vulnerable example:`n$before" }
+          if ($before -notmatch "ONYX-L001") { throw "scan did not find L001:`n$before" }
+          $after = (& python -m onyx.cli scan examples/demo_addcash_after.rbxlx 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw "scan failed on the fixed example:`n$after" }
+          if ($after -match "\[CRITICAL\]") { throw "fixed example still reports a critical finding:`n$after" }
+
+      - name: Verify refuses safely on Windows
+        shell: pwsh
+        run: |
+          $out = (& python -m onyx.cli verify examples/demo_addcash_before.rbxlx --luau $env:LUAU 2>&1 | Out-String)
+          $code = $LASTEXITCODE
+          if ($code -ne 1) { throw "verify should fail closed with exit 1, got $code`n$out" }
+          if ($out -notmatch "not supported on Windows") { throw "verify did not explain Windows support:`n$out" }
+          if ($out -match "Traceback") { throw "verify printed a traceback instead of a message:`n$out" }

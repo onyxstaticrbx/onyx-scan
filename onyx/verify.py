@@ -38,24 +38,35 @@ LUAU_RELEASES = "https://github.com/luau-lang/luau/releases"
 
 def luau_missing_hint() -> str:
     """What to print when the emulator has no interpreter. `scan` works without one."""
-    return (
-        "no Luau interpreter found. `onyx verify` needs one; `onyx scan` works without it.\n"
-        f"  Prebuilt Luau releases (Windows, macOS, Linux): {LUAU_RELEASES}\n"
-        "  Then put `luau` on PATH, pass --luau /path/to/luau, or set ONYX_LUAU.\n"
-        "  macOS/Linux one-liner:\n"
-        "  curl -sSL https://github.com/luau-lang/luau/releases/latest/download/luau-ubuntu.zip "
-        "-o /tmp/luau.zip && unzip -o /tmp/luau.zip -d /tmp/luau"
-    )
+    lines = [
+        "no Luau interpreter found. `onyx verify` needs one; `onyx scan` works without it.",
+        f"  Prebuilt Luau releases (Windows, macOS, Linux): {LUAU_RELEASES}",
+        "  Then put `luau` on PATH, pass --luau /path/to/luau, or set ONYX_LUAU.",
+    ]
+    if sandbox.is_windows():
+        lines.append(
+            "  Windows: download luau-windows.zip from the releases page, unzip it, then pass "
+            "--luau C:\\path\\to\\luau.exe"
+        )
+    else:
+        lines.extend([
+            "  macOS/Linux one-liner:",
+            "  curl -sSL https://github.com/luau-lang/luau/releases/latest/download/luau-ubuntu.zip "
+            "-o /tmp/luau.zip && unzip -o /tmp/luau.zip -d /tmp/luau",
+        ])
+    return "\n".join(lines)
 
 
 def find_luau() -> str | None:
-    """Locate a Luau interpreter. Order: env var, PATH, ./vendor/luau, /tmp/luau."""
+    """Locate a Luau interpreter. Order: env var, PATH, ./vendor/luau (POSIX /tmp/luau)."""
+    vendor = Path(__file__).resolve().parent.parent / "vendor" / ("luau.exe" if sandbox.is_windows() else "luau")
     candidates = [
         os.environ.get(LUAU_BIN_ENV),
         shutil.which("luau"),
-        str(Path(__file__).resolve().parent.parent / "vendor" / "luau"),
-        "/tmp/luau/luau",
+        str(vendor),
     ]
+    if not sandbox.is_windows():
+        candidates.append("/tmp/luau/luau")
     for c in candidates:
         if c and Path(c).exists() and os.access(c, os.X_OK):
             return c
@@ -816,6 +827,8 @@ def execute_place(place: Place, binary: str | None = None, *,
 
 
 def verify_place(path: str | Path, luau_bin: str | None = None) -> VerifyResult:
+    if sandbox.is_windows():
+        raise VerifyError(sandbox.WINDOWS_VERIFY_UNSUPPORTED)
     bin_path = luau_bin or find_luau()
     if not bin_path:
         raise VerifyError(luau_missing_hint())
@@ -892,7 +905,7 @@ def to_report(result: VerifyResult, scan_report: dict, place_path: str) -> dict:
         "replay_id": scan_report.get("replay_id", ""),
         "kind": "verification",
         "engine": "onyx-static+emulator",
-        "engine_version": "0.2.0",
+        "engine_version": "0.2.1",
         "language": "luau",
         "place_file": place_path,
         "executed": result.executed,

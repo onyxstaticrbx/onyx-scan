@@ -28,7 +28,7 @@ $ onyx scan examples/demo_addcash_before.rbxlx
 
   1 critical, 1 info
 
-  Precision is the author's own measurement (onyx-scan 0.2.0), not an external audit — how to read it, with intervals:
+  Precision is the author's own measurement (onyx-scan 0.2.1), not an external audit — how to read it, with intervals:
   https://github.com/onyxstaticrbx/onyx-scan#precision
 ```
 
@@ -58,10 +58,13 @@ onyx-scan` alone is enough and `onyx scan your-place.rbxlx` works from any direc
 
 Python 3.10 or newer. The static scan needs only Python.
 
-`onyx verify` needs a [Luau](https://github.com/luau-lang/luau/releases) interpreter — prebuilt
-releases exist for Windows, macOS and Linux. Put it on `PATH` as `luau`, pass `--luau /path/to/luau`,
-or set `ONYX_LUAU`. Without it, `onyx scan` still works and `onyx verify` stops with a clear install
-message instead of pretending to have executed anything.
+`onyx verify` needs a [Luau](https://github.com/luau-lang/luau/releases) interpreter. The verify
+path is **tested on Linux**. macOS and WSL are **untested**; they may work, but no result is claimed
+for either yet. It uses POSIX process limits for untrusted code; on native Windows it stops with a
+clear "not supported, use WSL" message rather than running without them. On Linux, put `luau` on
+`PATH`, pass `--luau /path/to/luau`, or set `ONYX_LUAU`. Without an interpreter, `onyx scan` still
+works and `onyx verify` stops with a clear install message instead of pretending to have executed
+anything.
 
 ## What it catches
 
@@ -74,7 +77,7 @@ Where there is enough evidence, the report carries the measured precision of the
 counts and 95% interval** (for example `63.6% (7/11; 95% CI 35.4–84.8%)`, marked a lead, not a
 conclusion); where there is not, it says `underpowered — N checked` or `no measured rate` rather
 than quoting a number. The rule id on every finding is stable, so a finding can be matched across
-runs and reports; the labels are frozen for `onyx-scan 0.2.0`: this is the author's own
+runs and reports; the labels are frozen for `onyx-scan 0.2.1`: this is the author's own
 self-assessment, not an external audit, and the Precision section below shows how to read them.
 
 Some findings are informational notes for rules the precision table does not measure; those print
@@ -147,17 +150,16 @@ looked up by rule id.
 one sentence. That is how the rules get better. Please don't post your place file or any
 credentials.
 
-**Windows?** Not tested by the maintainer yet. The package is pure Python, so it should install
-with Python 3.10+ from python.org; if it does not, open an issue with the exact error. The
-commands would be:
+**Windows?** `onyx scan` works on Windows with Python 3.10+ from python.org; it has been tested
+by the maintainer on Windows. `onyx verify` is **not supported on native Windows yet**: it executes
+untrusted place code and needs POSIX CPU, memory and file-size limits, so this build refuses instead
+of running without them. WSL is untested; Linux is the tested `verify` platform. The Windows
+commands are:
 
 ```
 py -m pip install onyx-scan
 py -m onyx.cli scan place.rbxlx
 ```
-
-`onyx verify` also needs the Windows Luau build from the releases page; it prints that link
-itself if it cannot find one.
 
 ## Licence
 

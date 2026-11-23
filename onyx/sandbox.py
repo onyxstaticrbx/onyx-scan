@@ -21,6 +21,10 @@ The defence is at the process boundary, not in the language:
 None of this makes executing untrusted Luau *safe* in an absolute sense; it makes
 the failure bounded, attributable and reported. That distinction is in the docs and
 in the error text the caller sees.
+
+The controls here are POSIX controls. On native Windows this module fails closed instead
+of spawning the child without CPU, memory and file-size limits; `onyx verify` says to use
+WSL, Linux or macOS, while `onyx scan` is unaffected.
 """
 
 from __future__ import annotations
@@ -48,6 +52,18 @@ MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 
 class SandboxError(Exception):
     """The run did not produce a usable result. Message is shown to the user."""
+
+
+WINDOWS_VERIFY_UNSUPPORTED = (
+    "`onyx verify` is not supported on Windows yet. It executes untrusted place code and "
+    "needs POSIX CPU, memory and file-size limits; this build refuses to run without them. "
+    "`onyx scan` works normally on Windows. Use WSL (Ubuntu), Linux or macOS for `verify`."
+)
+
+
+def is_windows() -> bool:
+    """One seam for the Windows branch, so the gate can simulate it without a Windows host."""
+    return os.name == "nt"
 
 
 @dataclass
@@ -149,6 +165,11 @@ def run_argv(argv: list[str], workdir: str | Path, *, timeout: float = TIMEOUT_S
 def _supervise(argv: list[str], workdir: Path, *, timeout: float, memory: int,
                max_output: int, env: dict | None = None) -> Run:
     """Spawn, bound, kill the process group, and report — the shared core."""
+    if is_windows():
+        # POSIX rlimits are what make running untrusted place code bounded. Windows has no
+        # equivalent wired up in this build, and deleting preexec_fn would silently remove
+        # the CPU/memory/file-size defence, so fail closed instead.
+        raise SandboxError(WINDOWS_VERIFY_UNSUPPORTED)
     td = Path(workdir)
     out_path = td / "stdout.txt"
     err_path = td / "stderr.txt"
@@ -157,16 +178,21 @@ def _supervise(argv: list[str], workdir: Path, *, timeout: float, memory: int,
     started = time.monotonic()
     killed: str | None = None
     with out_path.open("wb") as out_f, err_path.open("wb") as err_f:
+        popen_kwargs = {
+            "stdout": out_f,
+            "stderr": err_f,
+            "stdin": subprocess.DEVNULL,
+            "cwd": str(td),
+            "env": child_env,
+        }
+        # `preexec_fn` is POSIX-only. The guard above already fails closed on Windows;
+        # keeping the keyword out of the Windows call is defence in depth for any future
+        # branch that reaches here from a non-POSIX host.
+        if not is_windows():
+            popen_kwargs["preexec_fn"] = _limits(
+                CPU_LIMIT_S, memory, FSIZE_LIMIT_BYTES)
         try:
-            proc = subprocess.Popen(
-                argv,
-                stdout=out_f,
-                stderr=err_f,
-                stdin=subprocess.DEVNULL,
-                cwd=str(td),
-                env=child_env,
-                preexec_fn=_limits(CPU_LIMIT_S, memory, FSIZE_LIMIT_BYTES),
-            )
+            proc = subprocess.Popen(argv, **popen_kwargs)
         except OSError as exc:
             raise SandboxError(f"could not start {argv[0]}: {exc}") from exc
 

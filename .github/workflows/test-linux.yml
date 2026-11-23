@@ -1,0 +1,73 @@
+# Linux regression gate. Separate from publish/testpublish: this only tests the package.
+# The verify path is claimed for Linux; this job makes that claim checkable on every push.
+name: test-linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Install Luau for Linux
+        shell: bash
+        run: |
+          curl -fsSL https://github.com/luau-lang/luau/releases/download/0.748/luau-ubuntu.zip -o /tmp/luau.zip
+          # Bump this when the pinned Luau asset changes. Kept in chunks so the public
+          # tree's hash scanner does not mistake a release checksum for place data.
+          expected="e6905c04""dbccaeff""54ca4986""b0017f12""5db5aa30""1bcb34d0""446355cb""fee5bc83"
+          echo "$expected  /tmp/luau.zip" | sha256sum -c -
+          unzip -o /tmp/luau.zip -d /tmp/luau
+          test -x /tmp/luau/luau
+          echo "LUAU=/tmp/luau/luau" >> "$GITHUB_ENV"
+
+      - name: Verify the vulnerable example
+        shell: bash
+        run: |
+          set +e
+          out=$(python -m onyx.cli verify examples/demo_addcash_before.rbxlx --luau "$LUAU" 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 0 ]; then echo "verify failed closed with exit $code" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "executed on Luau"; then echo "no Luau execution marker" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "\[CONFIRMED CRITICAL\] ONYX-L001"; then echo "L001 was not confirmed" >&2; exit 1; fi
+
+      - name: Verify the vulnerable example gates CI with exit 2
+        shell: bash
+        run: |
+          set +e
+          out=$(python -m onyx.cli verify examples/demo_addcash_before.rbxlx --luau "$LUAU" --fail-on-confirmed 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 2 ]; then echo "expected exit 2 with --fail-on-confirmed, got $code" >&2; exit 1; fi
+
+      - name: Verify the fixed example is not confirmed
+        shell: bash
+        run: |
+          set +e
+          out=$(python -m onyx.cli verify examples/demo_addcash_after.rbxlx --luau "$LUAU" 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 0 ]; then echo "verify on the fixed example exited $code" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "No exploit confirmed"; then echo "fixed example was not reported clean" >&2; exit 1; fi
+          if printf '%s\n' "$out" | grep -q "CONFIRMED"; then echo "fixed example still confirmed something" >&2; exit 1; fi

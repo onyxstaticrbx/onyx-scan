@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 from . import baseline as baseline_mod
+from . import sandbox
 from . import finding_help
 from . import policy as policy_mod
 from . import rules as rules_mod
@@ -115,6 +116,9 @@ def _scan(args) -> int:
 
 
 def _verify(args) -> int:
+    if sandbox.is_windows():
+        print(f"error: {sandbox.WINDOWS_VERIFY_UNSUPPORTED}", file=sys.stderr)
+        return 1
     if find_luau() is None and not args.luau:
         print(f"error: {luau_missing_hint()}", file=sys.stderr)
         return 1
