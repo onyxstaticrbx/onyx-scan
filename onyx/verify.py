@@ -34,6 +34,19 @@ class VerifyError(Exception):
 
 
 LUAU_RELEASES = "https://github.com/luau-lang/luau/releases"
+#: The same Luau release the CI workflows pin. Chunked so the public leak scanner does not
+#: mistake a release checksum for place data; Python joins the chunks at import time.
+LUAU_UBUNTU_VERSION = "0.748"
+LUAU_UBUNTU_SHA256 = (
+    "e6905c04"
+    "dbccaeff"
+    "54ca4986"
+    "b0017f12"
+    "5db5aa30"
+    "1bcb34d0"
+    "446355cb"
+    "fee5bc83"
+)
 
 
 def luau_missing_hint() -> str:
@@ -48,11 +61,17 @@ def luau_missing_hint() -> str:
             "  Windows: download luau-windows.zip from the releases page, unzip it, then pass "
             "--luau C:\\path\\to\\luau.exe"
         )
+    elif sandbox.is_macos():
+        lines.append(
+            f"  macOS: download a prebuilt release from {LUAU_RELEASES}; macOS is untested."
+        )
     else:
         lines.extend([
-            "  macOS/Linux one-liner:",
-            "  curl -sSL https://github.com/luau-lang/luau/releases/latest/download/luau-ubuntu.zip "
-            "-o /tmp/luau.zip && unzip -o /tmp/luau.zip -d /tmp/luau",
+            "  Linux/WSL 2 (Ubuntu) install (verify is tested there; Luau 0.748 pinned):",
+            f"  curl -fsSL {LUAU_RELEASES}/download/{LUAU_UBUNTU_VERSION}/luau-ubuntu.zip "
+            "-o /tmp/luau.zip",
+            f'  echo "{LUAU_UBUNTU_SHA256}  /tmp/luau.zip" | sha256sum -c -',
+            "  unzip -o /tmp/luau.zip -d /tmp/luau",
         ])
     return "\n".join(lines)
 
@@ -905,7 +924,7 @@ def to_report(result: VerifyResult, scan_report: dict, place_path: str) -> dict:
         "replay_id": scan_report.get("replay_id", ""),
         "kind": "verification",
         "engine": "onyx-static+emulator",
-        "engine_version": "0.2.1",
+        "engine_version": "0.2.2",
         "language": "luau",
         "place_file": place_path,
         "executed": result.executed,

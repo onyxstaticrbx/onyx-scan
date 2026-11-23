@@ -44,7 +44,7 @@ PRECISION: dict[str, dict] = {
 }
 
 #: Bump this when the measured labels change; the CLI prints it so a stuck copy is visible.
-MEASURED_AS_OF = "onyx-scan 0.2.1"
+MEASURED_AS_OF = "onyx-scan 0.2.2"
 
 #: Any rule without an entry still gets an explicit label, so silence never reads as confidence.
 PRECISION_FALLBACK: dict = {"label": "no measured rate", "underpowered": True,

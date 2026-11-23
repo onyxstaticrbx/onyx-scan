@@ -24,7 +24,7 @@ in the error text the caller sees.
 
 The controls here are POSIX controls. On native Windows this module fails closed instead
 of spawning the child without CPU, memory and file-size limits; `onyx verify` says to use
-WSL, Linux or macOS, while `onyx scan` is unaffected.
+Linux or WSL 2 (Ubuntu), while `onyx scan` is unaffected.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,16 +55,26 @@ class SandboxError(Exception):
     """The run did not produce a usable result. Message is shown to the user."""
 
 
+#: The tested `verify` platforms, named once. The README, the Windows refusal and the
+#: missing-Luau hint must all use this same phrase; the gate checks that they do.
+VERIFY_TESTED_PLATFORMS = "Linux and WSL 2 (Ubuntu)"
+
 WINDOWS_VERIFY_UNSUPPORTED = (
     "`onyx verify` is not supported on Windows yet. It executes untrusted place code and "
     "needs POSIX CPU, memory and file-size limits; this build refuses to run without them. "
-    "`onyx scan` works normally on Windows. Use WSL (Ubuntu), Linux or macOS for `verify`."
+    "`onyx scan` works normally on Windows. `onyx verify` is tested on "
+    f"{VERIFY_TESTED_PLATFORMS}; macOS is untested."
 )
 
 
 def is_windows() -> bool:
     """One seam for the Windows branch, so the gate can simulate it without a Windows host."""
     return os.name == "nt"
+
+
+def is_macos() -> bool:
+    """One seam for the macOS branch, so the gate can simulate it without a Mac."""
+    return sys.platform == "darwin"
 
 
 @dataclass

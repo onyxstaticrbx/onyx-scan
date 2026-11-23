@@ -10,7 +10,7 @@ from .place import Place, PlaceParseError, load_place
 from .rules import SEVERITY_ORDER, ScanResult, scan_place
 
 ENGINE = "onyx-static"
-ENGINE_VERSION = "0.1.0"
+ENGINE_VERSION = "0.2.2"
 
 
 class ScanError(Exception):
