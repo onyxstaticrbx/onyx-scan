@@ -22,6 +22,10 @@ classifiers = [
 [project.scripts]
 onyx = "onyx.cli:main"
 
+[project.urls]
+Source = "https://github.com/onyxstaticrbx/onyx-scan"
+Issues = "https://github.com/onyxstaticrbx/onyx-scan/issues"
+
 [tool.setuptools]
 packages = ["onyx", "onyx.luau"]
 

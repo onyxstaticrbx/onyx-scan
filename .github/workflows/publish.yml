@@ -7,12 +7,11 @@
 #     Workflow name:    publish.yml
 #     Environment:      pypi
 #   GitHub -> repo Settings -> Environments -> create `pypi` (no secrets needed)
-# Then publish by creating a GitHub Release whose tag is `v0.2.0` (or run "Publish" manually).
+# This workflow is manual-only by design: a published GitHub Release does not publish to PyPI.
+# Publish from Actions -> publish -> Run workflow on `main`.
 name: publish
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -39,6 +38,30 @@ jobs:
           assert any(n.endswith("onyx/luau/mock.luau") for n in names), names
           assert not any(n.startswith(("tests/", "test/")) for n in names), names
           print("wheel ok:", whl)
+          PY
+      - name: Check the sdist contents (public package and generated metadata only)
+        run: |
+          python - <<'PY'
+          import glob, tarfile
+          sdist = glob.glob("dist/*.tar.gz")[0]
+          with tarfile.open(sdist) as tf:
+              names = {m.name.split("/", 1)[1] for m in tf.getmembers()
+                       if m.isfile() and "/" in m.name}
+          allowed = {
+              "pyproject.toml", "LICENSE", "README.md", "README-PYPI.md",
+              "CHANGELOG.md", "SECURITY.md", "PKG-INFO", "setup.cfg",
+              "onyx/__init__.py", "onyx/cli.py", "onyx/scan.py", "onyx/place.py",
+              "onyx/rules.py", "onyx/lexer.py", "onyx/verify.py", "onyx/sandbox.py",
+              "onyx/baseline.py", "onyx/policy.py", "onyx/finding_help.py",
+              "onyx/luau/__init__.py", "onyx/luau/harness.luau", "onyx/luau/mock.luau",
+              "onyx_scan.egg-info/PKG-INFO", "onyx_scan.egg-info/SOURCES.txt",
+              "onyx_scan.egg-info/dependency_links.txt",
+              "onyx_scan.egg-info/entry_points.txt",
+              "onyx_scan.egg-info/top_level.txt", "onyx_scan.egg-info/requires.txt",
+          }
+          extra = sorted(names - allowed)
+          assert not extra, f"unexpected sdist files: {extra}"
+          print("sdist ok:", sdist, f"({len(names)} files)")
           PY
       - uses: actions/upload-artifact@v4
         with:

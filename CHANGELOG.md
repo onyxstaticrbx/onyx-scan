@@ -8,7 +8,7 @@ the scanner.
 
 First public release.
 
-- Message-only follow-up to 0.2.1. `onyx verify` is now described consistently as tested on
+- Message and release-metadata follow-up to 0.2.1. `onyx verify` is now described consistently as tested on
   **Linux and WSL 2 (Ubuntu)**; macOS is untested, and native Windows remains unsupported for
   `verify`. The missing-Luau hint shows the Ubuntu install commands only on Linux/WSL, points macOS at
   the releases page without a command, and keeps the Windows zip hint separate. The Linux/WSL
@@ -20,6 +20,9 @@ First public release.
   about WSL 1, other distros, or macOS.
 - `MEASURED_AS_OF`, the scanner footer, `pyproject.toml`, `engine_version` and this changelog now
   agree on 0.2.2.
+- Release plumbing: `pyproject.toml` links Source and Issues back to the repository; the publish
+  workflow is manual-only (no release trigger) and checks the sdist contents; `SECURITY.md`
+  points reporters at GitHub private vulnerability reporting.
 
 ## 0.2.1 (TestPyPI dry run only)
 
