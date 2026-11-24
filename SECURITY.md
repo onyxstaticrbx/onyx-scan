@@ -17,3 +17,7 @@ path and line, and the command you ran are enough to start.
 
 This is a source-available project under FSL-1.1-ALv2; reports about this repository and its
 published package are welcome through the private form above.
+
+## Contributions
+
+Issues are welcome. Pull requests are not accepted for now.
