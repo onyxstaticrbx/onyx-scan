@@ -69,9 +69,9 @@ def luau_missing_hint() -> str:
         lines.extend([
             "  Linux/WSL 2 (Ubuntu) install (verify is tested there; Luau 0.748 pinned):",
             f"  curl -fsSL {LUAU_RELEASES}/download/{LUAU_UBUNTU_VERSION}/luau-ubuntu.zip "
-            "-o /tmp/luau.zip",
-            f'  echo "{LUAU_UBUNTU_SHA256}  /tmp/luau.zip" | sha256sum -c -',
-            "  unzip -o /tmp/luau.zip -d /tmp/luau",
+            "-o /tmp/luau.zip && "
+            f'echo "{LUAU_UBUNTU_SHA256}  /tmp/luau.zip" | sha256sum -c - && '
+            "unzip -o /tmp/luau.zip -d /tmp/luau",
         ])
     return "\n".join(lines)
 
@@ -853,7 +853,8 @@ def verify_place(path: str | Path, luau_bin: str | None = None) -> VerifyResult:
         raise VerifyError(luau_missing_hint())
 
     try:
-        place = load_place(path)
+        from .scan import load_input
+        place = load_input(path)
     except Exception as exc:  # noqa: BLE001
         raise VerifyError(str(exc)) from exc
 
@@ -924,7 +925,7 @@ def to_report(result: VerifyResult, scan_report: dict, place_path: str) -> dict:
         "replay_id": scan_report.get("replay_id", ""),
         "kind": "verification",
         "engine": "onyx-static+emulator",
-        "engine_version": "0.2.2",
+        "engine_version": "0.3.0",
         "language": "luau",
         "place_file": place_path,
         "executed": result.executed,

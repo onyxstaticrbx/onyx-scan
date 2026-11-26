@@ -26,6 +26,35 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .
 
+      - name: Check the distribution artifacts (the publish allowlist)
+        # Same check the publish job runs, so a module missing from the allowlist fails here.
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+          if ($LASTEXITCODE -ne 0) { throw "build failed with exit $LASTEXITCODE" }
+          python tools/check_artifacts.py dist
+          if ($LASTEXITCODE -ne 0) { throw "artifact check failed with exit $LASTEXITCODE" }
+
+      - name: Scan the Rojo project example
+        shell: pwsh
+        run: |
+          $out = (& python -m onyx.cli scan examples/rojo_demo 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw "scan failed on the Rojo example, exit $LASTEXITCODE`n$out" }
+          if ($out -notmatch "ONYX-L001") { throw "the cross-module lead was not reported:`n$out" }
+          if ($out -notmatch "\[LOW") { throw "the lead is not below the critical gate:`n$out" }
+          if ($out -notmatch "resolved module") { throw "the lead did not name the resolved module:`n$out" }
+          if ($out -notmatch "no measured rate") { throw "the lead did not say it is unmeasured:`n$out" }
+          Write-Host "Rojo lead reported at low severity"
+
+      - name: An unmeasured lead cannot fail the critical gate
+        shell: pwsh
+        run: |
+          $out = (& python -m onyx.cli scan examples/rojo_demo --fail-on-critical 2>&1 | Out-String)
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "expected exit 0 on an unmeasured lead, got $code`n$out" }
+          Write-Host "exit 0 on the unmeasured lead"
+
       - name: Install Luau for Windows
         shell: pwsh
         run: |

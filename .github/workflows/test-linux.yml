@@ -26,6 +26,38 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .
 
+      - name: Check the distribution artifacts (the publish allowlist)
+        # Same check the publish job runs, so a module missing from the allowlist fails here.
+        shell: bash
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+          python tools/check_artifacts.py dist
+
+      - name: Scan the Rojo project example
+        shell: bash
+        run: |
+          set +e
+          out=$(python -m onyx.cli scan examples/rojo_demo 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 0 ]; then echo "scan failed on the Rojo example, exit $code" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "ONYX-L001"; then echo "the cross-module lead was not reported" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "\[LOW"; then echo "the lead is not below the critical gate" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "resolved module"; then echo "the lead did not name the resolved module" >&2; exit 1; fi
+          if ! printf '%s\n' "$out" | grep -q "no measured rate"; then echo "the lead did not say it is unmeasured" >&2; exit 1; fi
+
+      - name: An unmeasured lead cannot fail the critical gate
+        shell: bash
+        run: |
+          set +e
+          out=$(python -m onyx.cli scan examples/rojo_demo --fail-on-critical 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 0 ]; then echo "expected exit 0 on an unmeasured lead, got $code" >&2; exit 1; fi
+
       - name: Install Luau for Linux
         shell: bash
         run: |

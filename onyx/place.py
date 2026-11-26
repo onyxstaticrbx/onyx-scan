@@ -125,6 +125,12 @@ class Place:
     path: str
     root: Instance
     instances: list[Instance]
+    #: Source-read coverage for an input that can be partial (Rojo directories). XML input
+    #: leaves this empty; the scan report always carries a coverage block regardless.
+    coverage: dict = field(default_factory=dict)
+    #: Optional RequireAnalysis, installed by scan_place. Kept as object to avoid a
+    #: place -> require_graph import cycle.
+    analysis: object | None = None
 
     @property
     def scripts(self) -> list[Instance]:

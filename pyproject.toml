@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "onyx-scan"
-version = "0.2.2"
+version = "0.3.0"
 description = "Static exploit scan and an executing emulator for Roblox/Luau places, with measured precision per rule"
 readme = "README-PYPI.md"
 license = "FSL-1.1-ALv2"

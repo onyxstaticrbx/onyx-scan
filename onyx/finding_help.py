@@ -45,6 +45,8 @@ PRECISION: dict[str, dict] = {
 
 #: Bump this when the measured labels change; the CLI prints it so a stuck copy is visible.
 MEASURED_AS_OF = "onyx-scan 0.2.2"
+#: The labels above were measured on the 0.2.2 token engine. 0.3.0 adds a cross-file
+#: extension; it is labelled as a lead, not carried into the old measurement.
 
 #: Any rule without an entry still gets an explicit label, so silence never reads as confidence.
 PRECISION_FALLBACK: dict = {"label": "no measured rate", "underpowered": True,
@@ -82,6 +84,9 @@ CHECK: dict[str, str] = {
                  "owns the remote if the feature is needed.",
     "ONYX-L015": "Search for the debug surface by name and confirm it is gone from the published "
                  "place, not only from Studio.",
+    "ONYX-L016": "Decide the legal range on the server and enforce it there. The clamp must hold "
+                 "for NaN, infinity, negative and very large values; clamping alone is not the "
+                 "authorization decision.",
     "ONYX-L016": "Send NaN, infinity, a negative number and a very large number. The clamp must "
                  "hold on all four.",
     "ONYX-L017": "Re-deliver the same receipt (a test purchase that is acknowledged twice) and "

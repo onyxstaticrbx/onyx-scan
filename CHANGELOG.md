@@ -4,7 +4,45 @@ Notable changes to `onyx-scan`. The version in each heading matches the `version
 `pyproject.toml`, the `MEASURED_AS_OF` label in `onyx/finding_help.py`, and the footer printed by
 the scanner.
 
-## 0.2.2 (unreleased)
+## 0.3.0 (unreleased)
+
+Rojo project input, a pure-Python Luau AST parser, and resolved cross-file require
+support. Existing rule ids stay the same; the new cross-file shape is L001 when a
+handler delegates to a resolved ModuleScript function that writes state.
+
+- `onyx scan <dir>` accepts a Rojo project directory (or `*.project.json`) and maps it to
+the same `Place` model as XML. `verify` consumes the same model.
+- Hostile directory input is bounded: no symlinks, no `$path` escape, caps on files,
+source bytes, nesting and total source. Skipped files and unresolved requires are
+reported, not silently dropped.
+- A real AST parser (`onyx/luau_ast.py`) supports statements, expressions, types,
+string interpolation, generics and Luau syntax used by place scripts. On a parse
+failure the scan falls back to the token path and counts the fallback in coverage.
+- `onyx/require_graph.py` resolves `script.Parent.X`, `game.ReplicatedStorage...`,
+`GetService`, `WaitForChild`/`FindFirstChild` and simple local aliases. Numeric,
+asset and dynamic requires are counted as unresolved.
+- The 0.2.2 precision labels are unchanged and still describe the token engine; the
+cross-file L001 extension has no measured rate yet and is printed as a low-severity
+lead (medium confidence), so `--fail-on-critical` cannot fail on it.
+- `scan` has a wall-clock budget (default 120 s, `--time-budget`); expiry returns a partial
+report with a coverage note instead of hanging. The parser bounds source bytes, tokens,
+nodes, expression depth and per-script time, and any exceeded limit becomes a counted
+fallback, not a crash.
+- The cross-module README claim now says one hop through simple `require` forms is
+resolved and the rest is counted as unresolved; the precision footer says the labels were
+measured on the 0.2.2 engine.
+- Coverage reports `require_by_pattern`: resolved and unresolved one-hop `require` calls
+by syntactic shape (`script.Parent.child`, `game:GetService.child`, `local alias.child`,
+`numeric asset id`, ...). An unresolved total now names the forms, so a partial read can
+say which shapes the scanner understands.
+- The publish allowlist moved to `tools/check_artifacts.py` and runs in `test-linux` and
+`test-windows` as well as at publish, so a public module missing from it fails on the pull
+request instead of after the release button is pressed. `tools/leak_check.py` ships the
+public-safe copy; private identifier lists are supplied from local files.
+- CI scans `examples/rojo_demo` on Linux and Windows and asserts the unmeasured lead
+prints at low severity and cannot fail `--fail-on-critical`.
+
+## 0.2.2 (released)
 
 First public release.
 
