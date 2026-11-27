@@ -10,7 +10,7 @@ from .place import Place, PlaceParseError, load_place
 from .rules import SEVERITY_ORDER, ScanResult, scan_place
 
 ENGINE = "onyx-static"
-ENGINE_VERSION = "0.2.2"
+ENGINE_VERSION = "0.3.0"
 
 
 class ScanError(Exception):
@@ -37,8 +37,12 @@ def _replay_id(place: Place, findings: list[dict]) -> str:
 NUMERIC_PLACE = ("instances", "scripts", "client_scripts", "server_scripts", "modules",
                  "remotes", "client_reachable_remotes")
 NUMERIC_COVERAGE = ("client_reachable_remotes", "remotes_referenced",
-                    "handlers_without_validation", "scripts_scanned", "lines_scanned")
+                    "handlers_without_validation", "scripts_scanned", "lines_scanned",
+                    "scripts_not_analyzed")
 SEVERITIES = ("critical", "high", "medium", "low", "info")
+#: A single place scan is bounded so a hostile or enormous project returns a partial,
+#: counted report instead of hanging a CI job. CLI may override with --time-budget.
+DEFAULT_TIME_BUDGET = 120.0
 
 
 def combine(reports: list[dict], names: list[str]) -> dict:
@@ -101,7 +105,8 @@ def combine(reports: list[dict], names: list[str]) -> dict:
 
 
 def scan_source(source: str, *, class_name: str = "Script",
-                path: str = "public/script.luau"):
+                path: str = "public/script.luau",
+                budget_seconds: float | None = DEFAULT_TIME_BUDGET):
     """Scan one script's text. Used for public-code measurement and for tests.
 
     A loose file has no place around it, so place-level rules (orphan remotes,
@@ -117,28 +122,71 @@ def scan_source(source: str, *, class_name: str = "Script",
     )
     inst.parent = root
     root.children.append(inst)
-    return scan_place(Place(path=path, root=root, instances=[inst]))
+    return scan_place(Place(path=path, root=root, instances=[inst]),
+                      budget_seconds=budget_seconds)
 
 
-def scan_file(path: str | Path) -> dict:
+def load_input(path: str | Path) -> Place:
+    """Load a place file or a Rojo project directory into one Place model.
+
+    The caller should not care which input produced the Place; rules and the emulator
+    both see the same instance tree.
+    """
+    p = Path(path)
+    if p.is_dir() or p.name.endswith(".project.json"):
+        from .rojo import load_rojo_project
+        try:
+            return load_rojo_project(p)
+        except PlaceParseError as exc:
+            raise ScanError(str(exc)) from exc
     try:
-        place = load_place(path)
+        return load_place(p)
     except PlaceParseError as exc:
         raise ScanError(str(exc)) from exc
 
-    result: ScanResult = scan_place(place)
+
+def scan_file(path: str | Path, *, budget_seconds: float | None = DEFAULT_TIME_BUDGET) -> dict:
+    try:
+        place = load_input(path)
+    except PlaceParseError as exc:
+        raise ScanError(str(exc)) from exc
+
+    result: ScanResult = scan_place(place, budget_seconds=budget_seconds)
     findings = [f.to_dict() for f in result.findings]
 
     counts = result.counts()
     critical = [f for f in findings if f["severity"] == "critical"]
 
-    # The one line a human reads first. Severity framing, not counts.
-    headline = (
-        f"{len(critical)} critical issue{'s' if len(critical) != 1 else ''} "
-        f"found in {result.coverage['scripts_scanned']} scripts"
-        if critical
-        else f"No critical issues in {result.coverage['scripts_scanned']} scripts"
-    )
+    # The one line a human reads first. Severity framing, not counts. A partial read
+    # (skipped source, unresolved require, parser fallback) must not read as "clean".
+    partial = []
+    cov = result.coverage
+    if int(cov.get("require_unresolved") or 0):
+        partial.append(f"{int(cov['require_unresolved'])} unresolved require(s)")
+    if int(cov.get("scripts_skipped") or 0):
+        partial.append(f"{int(cov['scripts_skipped'])} skipped source file(s)")
+    if int(cov.get("module_parse_failures") or 0):
+        partial.append(f"{int(cov['module_parse_failures'])} parser fallback(s)")
+    if cov.get("module_analysis_error"):
+        partial.append("module analysis failed")
+    if cov.get("time_budget_exceeded"):
+        shown_budget = budget_seconds if budget_seconds is not None else DEFAULT_TIME_BUDGET
+        partial.append(
+            f"time budget {shown_budget:g}s exceeded; "
+            f"{int(cov.get('scripts_not_analyzed') or 0)} script(s) not analyzed"
+        )
+    if critical:
+        headline = (
+            f"{len(critical)} critical issue{'s' if len(critical) != 1 else ''} "
+            f"found in {cov['scripts_scanned']} scripts"
+        )
+    elif partial:
+        headline = (
+            f"No critical issues found in {cov['scripts_scanned']} scripts — partial scan: "
+            + ", ".join(partial)
+        )
+    else:
+        headline = f"No critical issues in {cov['scripts_scanned']} scripts"
 
     return {
         "replay_id": _replay_id(place, findings),
@@ -150,7 +198,8 @@ def scan_file(path: str | Path) -> dict:
         "place": result.place_summary,
         "headline": headline,
         "counts": counts,
-        "coverage": result.coverage,
+        "coverage": {**result.coverage,
+                     "time_budget_seconds": budget_seconds},
         "findings": findings,
         # Honesty flag. Static analysis reports code patterns, not demonstrated
         # exploits. Nothing here is "confirmed" until it is executed and recorded.

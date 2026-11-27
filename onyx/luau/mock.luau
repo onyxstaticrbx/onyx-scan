@@ -4,7 +4,7 @@
 -- lets a client control server state." That is a real claim and it is bounded.
 
 local Onyx = {}
-Onyx.__version = "0.2.2"
+Onyx.__version = "0.3.0"
 Onyx.log = {}
 Onyx.claims = {}
 Onyx.remoteCalls = {}

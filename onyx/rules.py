@@ -17,6 +17,7 @@ Design rules for this module:
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 
 from .lexer import Token, tokenize
@@ -138,6 +139,9 @@ class Finding:
     #: The scanner computes it and the claim title names it; the render needs it so two L001
     #: findings do not print the same disjunction. Empty for rules without a sink.
     sink: str = ""
+    #: False when the finding shape is newer than the measured labels. It is a lead, not a
+    #: measured claim, and the CLI prints `no measured rate` for it.
+    measured: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -152,6 +156,7 @@ class Finding:
             "confidence": self.confidence,
             "confirmed": self.confirmed,
             "sink": self.sink,
+            "measured": self.measured,
         }
 
 
@@ -1352,17 +1357,34 @@ def rule_unvalidated_remote_handlers(ctx: ScriptContext, place: Place) -> list[F
                           if x[2] == "value" and x[3] in _CLAIM_SINK_TEXT]
             target_hits = [x for x in hits if x[2] == "target"]
             hops: list[tuple[int, str, str, str]] = []
+            cross_hits = []
             if not value_hits:
                 hops = [x for x in _one_hop_hits(tokens, h, local_fns)
                         if x[2] == "value" and x[3] in _CLAIM_SINK_TEXT]
+                try:
+                    from .require_graph import cross_file_hits
+                    cross_hits = cross_file_hits(place, ctx.inst, h, tokens)
+                except Exception:  # noqa: BLE001
+                    cross_hits = []
             if value_hits:
                 claim_what = _CLAIM_SINK_TEXT[value_hits[0][3]]
+                claim_line = value_hits[0][0]
+            elif cross_hits:
+                claim_what = _CLAIM_SINK_TEXT[cross_hits[0].sink]
+                claim_line = h.line
             elif hops:
                 claim_what = _CLAIM_SINK_TEXT[hops[0][3]]
+                claim_line = h.line
             else:
                 claim_what = ""
+                claim_line = h.line
             if claim_what and params:
-                resolved_sink = value_hits[0][3] if value_hits else hops[0][3]
+                if value_hits:
+                    resolved_sink = value_hits[0][3]
+                elif cross_hits:
+                    resolved_sink = cross_hits[0].sink
+                else:
+                    resolved_sink = hops[0][3]
                 if strength == "none":
                     out.append(Finding(
                         rule_id="ONYX-L001",
@@ -1372,6 +1394,8 @@ def rule_unvalidated_remote_handlers(ctx: ScriptContext, place: Place) -> list[F
                             "Any client can fire this remote with arbitrary arguments. The "
                             f"handler writes {claim_what}, and the value written comes from the "
                             "client argument, so a player chooses it."
+                            + (" This crosses a resolved require into a module function."
+                               if cross_hits else "")
                         ),
                         path=ctx.inst.path, line=h.line, snippet=ctx.snippet(h.line),
                         fix="Validate every argument (typeof + clamp) before mutating, "
@@ -1388,6 +1412,8 @@ def rule_unvalidated_remote_handlers(ctx: ScriptContext, place: Place) -> list[F
                             "contain a check, but the scanner cannot prove the check runs on "
                             "every path that reaches the write. A guard that misses one branch "
                             "is the same bug with a comment above it."
+                            + (" This crosses a resolved require into a module function."
+                               if cross_hits else "")
                         ),
                         path=ctx.inst.path, line=h.line, snippet=ctx.snippet(h.line),
                         fix="Confirm the check rejects every unexpected type and range "
@@ -1420,11 +1446,49 @@ def rule_unvalidated_remote_handlers(ctx: ScriptContext, place: Place) -> list[F
                 # this script, and *that* function writes. Batch-3 misses were mostly
                 # this shape (`shoot(...)`, `FunctionModule[n](...)`, `item[method](...)`).
                 hops = _one_hop_hits(tokens, h, local_fns)
+            # The value is handed to a function in a resolved module. This is the
+            # cross-file shape the token-only engine cannot see; it is still the same
+            # L001 claim, not a new rule. Compute it even when a generic local hit exists
+            # (e.g. `util.Give(player, amount)` looks like a mutating call by name).
+            try:
+                from .require_graph import cross_file_hits
+                cross_hits = cross_file_hits(place, ctx.inst, h, tokens)
+            except Exception:  # noqa: BLE001
+                cross_hits = []
+            direct_claim = any(x[2] == "value" and x[3] in _CLAIM_SINK_TEXT for x in hits)
+            if cross_hits and not direct_claim and not hops:
+                sink = cross_hits[0].sink
+                guarded = bool(cross_hits[0].guarded)
+                # This shape is newer than the measured labels. It is a lead, not a
+                # claim: keeping it out of `critical` means --fail-on-critical cannot
+                # fail a pipeline on a rate we have not measured. The differential
+                # evidence and any future measurement decide when it earns a claim.
+                severity = "low"
+                confidence = "low" if guarded else "medium"
+                out.append(Finding(
+                    rule_id="ONYX-L001",
+                    severity=severity,
+                    title=f"Lead — remote handler passes a client-chosen value into "
+                          f"{_CLAIM_SINK_TEXT[sink]} through a resolved module",
+                    consequence=(
+                        "Lead, not a measured claim. A client can fire this remote with arbitrary "
+                        "arguments; the handler passes the argument into a resolved module function "
+                        "which writes it. The scanner has resolved the module, but has not measured "
+                        "this cross-file shape, so it is reported below the critical gate."
+                        + (" The module function contains an early-return check on the value, "
+                           "but the scanner cannot prove that check runs on every path."
+                           if guarded else "")
+                    ),
+                    path=ctx.inst.path, line=h.line, snippet=ctx.snippet(h.line),
+                    fix="Validate every argument at the remote boundary and again at the "
+                        "module boundary, or resolve the value server-side instead of accepting it.",
+                    confidence=confidence, sink=sink, measured=False,
+                ))
+                continue
             if not hits and not hops:
                 # Accepting arguments and forwarding them — a relay, a dispatcher, a
-                # display delegation — is not a vulnerability. 2026-11-21: the info note
-                # this used to emit is gone (the 324-finding batch showed it was noise on
-                # every measured relay). Nothing is reported for this shape.
+                # display delegation — is not a vulnerability unless a resolved module
+                # function reaches a sink, checked above.
                 continue
             if hops:
                 line, what = hops[0][0], hops[0][1]
@@ -2914,17 +2978,36 @@ def _role(inst: Instance) -> str:
     return "module"
 
 
-def scan_place(place: Place) -> ScanResult:
+def scan_place(place: Place, *, budget_seconds: float | None = None) -> ScanResult:
     findings: list[Finding] = []
     texts: list[str] = []
+    deadline = (time.monotonic() + budget_seconds
+                if budget_seconds is not None else None)
+    analyzed = 0
+    scripts_not_analyzed = 0
+    time_budget_exceeded = False
+    # Build the module graph once. A parse failure falls back to the token path and is
+    # counted in coverage; it never silently drops a script or calls it clean.
+    _analysis_error = ""
+    try:
+        from .require_graph import attach as _attach_require_graph
+        _analysis = _attach_require_graph(place, deadline=deadline)
+    except Exception as exc:  # noqa: BLE001 - analysis must never make scan unusable
+        _analysis = None
+        _analysis_error = f"{type(exc).__name__}: {exc}"
 
-    for inst in place.scripts:
+    for index, inst in enumerate(place.scripts):
+        if deadline is not None and time.monotonic() > deadline:
+            time_budget_exceeded = True
+            scripts_not_analyzed = len(place.scripts) - index
+            break
         src = inst.source or ""
         texts.append(src)
         lines = src.splitlines() or [""]
         ctx = ScriptContext(inst=inst, tokens=tokenize(src), lines=lines, role=_role(inst))
         for rule in SCRIPT_RULES:
             findings.extend(rule(ctx, place))
+        analyzed += 1
 
     all_text = "\n".join(texts)
     findings.extend(place_rule_orphan_remotes(place, all_text))
@@ -2954,8 +3037,24 @@ def scan_place(place: Place) -> ScanResult:
         "client_reachable_remotes": total_remotes,
         "remotes_referenced": handled_remotes,
         "handlers_without_validation": unvalidated,
-        "scripts_scanned": len(place.scripts),
-        "lines_scanned": sum(len((s.source or "").splitlines()) for s in place.scripts),
+        "scripts_scanned": analyzed,
+        "lines_scanned": sum(len((s.source or "").splitlines())
+                             for s in place.scripts[:analyzed]),
     }
+    if _analysis is not None:
+        coverage.update(_analysis.coverage())
+        if _analysis.time_budget_exceeded:
+            time_budget_exceeded = True
+            scripts_not_analyzed = max(scripts_not_analyzed,
+                                       _analysis.scripts_not_analyzed)
+    if _analysis_error:
+        coverage["module_analysis_error"] = _analysis_error
+    if time_budget_exceeded:
+        coverage["time_budget_exceeded"] = True
+        coverage["scripts_not_analyzed"] = scripts_not_analyzed
+    if place.coverage:
+        coverage["source"] = dict(place.coverage)
+        coverage["scripts_skipped"] = int(place.coverage.get("scripts_skipped", 0))
+        coverage["unresolved_requires"] = int(coverage.get("require_unresolved", 0))
 
     return ScanResult(place_summary=place.summary(), findings=unique, coverage=coverage)

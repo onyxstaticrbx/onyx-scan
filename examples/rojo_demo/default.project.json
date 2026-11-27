@@ -1,0 +1,15 @@
+{
+  "name": "RojoDemo",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "AddCash": { "$className": "RemoteEvent" },
+      "util": { "$className": "ModuleScript", "$path": "src/shared/util.lua" }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "main": { "$className": "Script", "$path": "src/server/main.server.lua" }
+    }
+  }
+}

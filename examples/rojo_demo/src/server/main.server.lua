@@ -1,0 +1,5 @@
+local RS = game:GetService("ReplicatedStorage")
+local util = require(RS.util)
+RS.AddCash.OnServerEvent:Connect(function(player, amount)
+  util.Give(player, amount)
+end)

@@ -29,40 +29,11 @@ jobs:
         run: |
           python -m pip install --upgrade build
           python -m build
-      - name: Check the wheel contents (no test data, no tests, luau data present)
-        run: |
-          python - <<'PY'
-          import glob, zipfile
-          whl = glob.glob("dist/*.whl")[0]
-          names = zipfile.ZipFile(whl).namelist()
-          assert any(n.endswith("onyx/luau/mock.luau") for n in names), names
-          assert not any(n.startswith(("tests/", "test/")) for n in names), names
-          print("wheel ok:", whl)
-          PY
-      - name: Check the sdist contents (public package and generated metadata only)
-        run: |
-          python - <<'PY'
-          import glob, tarfile
-          sdist = glob.glob("dist/*.tar.gz")[0]
-          with tarfile.open(sdist) as tf:
-              names = {m.name.split("/", 1)[1] for m in tf.getmembers()
-                       if m.isfile() and "/" in m.name}
-          allowed = {
-              "pyproject.toml", "LICENSE", "README.md", "README-PYPI.md",
-              "CHANGELOG.md", "SECURITY.md", "PKG-INFO", "setup.cfg",
-              "onyx/__init__.py", "onyx/cli.py", "onyx/scan.py", "onyx/place.py",
-              "onyx/rules.py", "onyx/lexer.py", "onyx/verify.py", "onyx/sandbox.py",
-              "onyx/baseline.py", "onyx/policy.py", "onyx/finding_help.py",
-              "onyx/luau/__init__.py", "onyx/luau/harness.luau", "onyx/luau/mock.luau",
-              "onyx_scan.egg-info/PKG-INFO", "onyx_scan.egg-info/SOURCES.txt",
-              "onyx_scan.egg-info/dependency_links.txt",
-              "onyx_scan.egg-info/entry_points.txt",
-              "onyx_scan.egg-info/top_level.txt", "onyx_scan.egg-info/requires.txt",
-          }
-          extra = sorted(names - allowed)
-          assert not extra, f"unexpected sdist files: {extra}"
-          print("sdist ok:", sdist, f"({len(names)} files)")
-          PY
+      - name: Check the wheel and sdist against the published allowlist
+        # One allowlist, in tools/check_artifacts.py, run here and in test-linux/test-windows.
+        # A module added to the package but not to the allowlist fails on the pull request,
+        # not here, after the release button has been pressed.
+        run: python tools/check_artifacts.py dist
       - uses: actions/upload-artifact@v4
         with:
           name: dist

@@ -34,8 +34,42 @@ def _enrich(report: dict) -> None:
     for f in report.get("findings", []):
         rid = f.get("rule_id", "")
         f["check"] = finding_help.check_for(rid)
-        f["precision"] = finding_help.precision_for(rid)
+        f["precision"] = (finding_help.precision_for(rid) if f.get("measured", True)
+                          else finding_help.PRECISION_FALLBACK)
         f["prompt"] = finding_help.prompt_for(f)
+
+
+def _coverage_notes(report: dict) -> list[str]:
+    """Facts that make a zero-finding report not a clean report."""
+    cov = report.get("coverage", {})
+    notes: list[str] = []
+    source = cov.get("source") or {}
+    skipped = int(cov.get("scripts_skipped") or 0)
+    if skipped:
+        reasons = source.get("skipped") or []
+        if reasons:
+            notes.append(f"{skipped} source file(s) skipped: " + "; ".join(reasons[:3]))
+        else:
+            notes.append(f"{skipped} source file(s) skipped — see coverage JSON")
+    unsupported = source.get("unsupported") or []
+    if unsupported:
+        notes.append(f"{len(unsupported)} unsupported project feature(s): "
+                     + "; ".join(unsupported[:3]))
+    failures = int(cov.get("module_parse_failures") or 0)
+    if failures:
+        notes.append(f"{failures} script(s) fell back to the token parser")
+    unresolved = int(cov.get("require_unresolved") or 0)
+    if unresolved:
+        notes.append(f"{unresolved} require reference(s) unresolved")
+    analysis_error = cov.get("module_analysis_error")
+    if analysis_error:
+        notes.append(f"module analysis failed ({analysis_error}); cross-file paths were not checked")
+    if cov.get("time_budget_exceeded"):
+        notes.append(
+            f"time budget {cov.get('time_budget_seconds', 120):g}s exceeded; "
+            f"{int(cov.get('scripts_not_analyzed') or 0)} script(s) not analyzed — the result is partial"
+        )
+    return notes
 
 
 def _print_human(report: dict) -> None:
@@ -44,8 +78,11 @@ def _print_human(report: dict) -> None:
     cov = report["coverage"]
     print(
         f"  {place['scripts']} scripts · {cov['lines_scanned']:,} lines · "
-        f"{place['client_reachable_remotes']} client-reachable remotes\n"
+        f"{place['client_reachable_remotes']} client-reachable remotes"
     )
+    for note in _coverage_notes(report):
+        print(f"  coverage: {note}")
+    print()
     if not report["findings"]:
         print("  No findings.\n")
         return
@@ -66,7 +103,7 @@ def _print_human(report: dict) -> None:
 
 def _scan(args) -> int:
     try:
-        report = scan_file(args.place)
+        report = scan_file(args.place, budget_seconds=args.time_budget)
     except ScanError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -77,8 +114,9 @@ def _scan(args) -> int:
     if not args.quiet:
         _print_human(report)
         if report.get("findings"):
-            print(f"  Precision is the author's own measurement ({finding_help.MEASURED_AS_OF}), "
-                  "not an external audit — how to read it, with intervals:")
+            print("  Precision labels were measured on the 0.2.2 engine "
+                  "(the author's own measurement), not an external audit — how to read "
+                  "the labels, with intervals:")
             print("  https://github.com/onyxstaticrbx/onyx-scan#precision\n")
     if args.prompt:
         for f in report["findings"]:
@@ -160,7 +198,7 @@ def _verify(args) -> int:
 
 def _baseline(args) -> int:
     try:
-        report = scan_file(args.place)
+        report = scan_file(args.place, budget_seconds=getattr(args, "time_budget", 120.0))
     except ScanError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -187,27 +225,30 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="onyx", description="Static exploit scan for Roblox places")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sp = sub.add_parser("scan", help="scan a .rbxlx / .rbxmx file")
-    sp.add_argument("place", help="path to .rbxlx or .rbxmx")
+    sp = sub.add_parser("scan", help="scan a .rbxlx / .rbxmx file or a Rojo project")
+    sp.add_argument("place", help="path to .rbxlx, .rbxmx, a Rojo project directory, or a .project.json")
     sp.add_argument("--json", dest="json_out", help="write raw report JSON here")
     sp.add_argument("--fail-on-critical", action="store_true", help="exit 2 if any critical found")
     sp.add_argument("--baseline", dest="baseline_path", default=None,
                     help="baseline file; findings already in it are not 'new'")
     sp.add_argument("--fail-on-new", action="store_true",
                     help="exit 2 only for findings that are not in the baseline")
+    sp.add_argument("--time-budget", type=float, default=120.0, metavar="SECONDS",
+                    help="wall-clock budget for one place scan; on expiry the report is partial "
+                         "and says which scripts were not analyzed (default: 120)")
     sp.add_argument("--quiet", action="store_true")
     sp.add_argument("--prompt", action="store_true",
                     help="print a paste-ready fix prompt for every finding")
 
     vp = sub.add_parser("verify", help="execute a place against the emulator and confirm what is real")
-    vp.add_argument("place", help="path to .rbxlx or .rbxmx")
+    vp.add_argument("place", help="path to .rbxlx, .rbxmx, a Rojo project directory, or a .project.json")
     vp.add_argument("--json", dest="json_out", help="write verification report JSON here")
     vp.add_argument("--luau", default=None, help="path to a luau interpreter (default: auto-detect)")
     vp.add_argument("--fail-on-confirmed", action="store_true",
                     help="exit 2 if any exploit is confirmed (for CI)")
 
     bp = sub.add_parser("baseline", help="record the current findings as known")
-    bp.add_argument("place", help="path to .rbxlx or .rbxmx")
+    bp.add_argument("place", help="path to .rbxlx, .rbxmx, a Rojo project directory, or a .project.json")
     bp.add_argument("-o", "--out", default=None, help="baseline path (default: .onyx-baseline.json)")
 
     sub.add_parser("rules", help="list every rule id and what it catches")

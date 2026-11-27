@@ -6,7 +6,8 @@ finding's handler under a mock of the documented Roblox API.
 It is a linter for a narrow class of bug where a client can reach something on the server.
 It is **source-available, not open source** (FSL-1.1-Apache-2.0): read, run and modify it freely,
 including on commercial games; no resale or competing hosted service. It is **not** a security
-audit and not a guarantee.
+audit and not a guarantee. This build is **onyx-scan 0.3.0**; the precision labels were measured
+on the 0.2.2 token engine and are not extended to the new cross-file layer.
 
 ```console
 $ onyx scan examples/demo_addcash_before.rbxlx
@@ -28,7 +29,7 @@ $ onyx scan examples/demo_addcash_before.rbxlx
 
   1 critical, 1 info
 
-  Precision is the author's own measurement (onyx-scan 0.2.2), not an external audit — how to read it, with intervals:
+  Precision labels were measured on the 0.2.2 engine (the author's own measurement), not an external audit — how to read the labels, with intervals:
   https://github.com/onyxstaticrbx/onyx-scan#precision
 ```
 
@@ -52,9 +53,10 @@ pip install .
 onyx scan examples/demo_addcash_before.rbxlx
 ```
 
-The two fixtures are small example places, one vulnerable and one fixed, so every command
-below runs against them in a clean virtualenv. If you already have a place file, `pip install
-onyx-scan` alone is enough and `onyx scan your-place.rbxlx` works from any directory.
+The two XML fixtures are small example places, one vulnerable and one fixed. `examples/rojo_demo` is a
+Rojo project with the same vulnerable shape spread across a server script and a ModuleScript.
+Every command below runs against one of them in a clean virtualenv. If you already have a place
+file, `pip install onyx-scan` alone is enough and `onyx scan your-place.rbxlx` works from any directory.
 
 Python 3.10 or newer. The static scan needs only Python.
 
@@ -78,7 +80,7 @@ Where there is enough evidence, the report carries the measured precision of the
 counts and 95% interval** (for example `63.6% (7/11; 95% CI 35.4–84.8%)`, marked a lead, not a
 conclusion); where there is not, it says `underpowered — N checked` or `no measured rate` rather
 than quoting a number. The rule id on every finding is stable, so a finding can be matched across
-runs and reports; the labels are frozen for `onyx-scan 0.2.2`: this is the author's own
+runs and reports; the labels were measured on the **0.2.2 engine** (`onyx-scan 0.2.2`): this is the author's own
 self-assessment, not an external audit, and the Precision section below shows how to read them.
 
 Some findings are informational notes for rules the precision table does not measure; those print
@@ -97,10 +99,26 @@ measured label applies.
 - duplication and race-condition bugs (two players acting on the same tick);
 - client-trusted combat, damage or position;
 - movement exploits, and anything that lives only inside Roblox's own client;
-- anything outside those rule classes.
+- handlers defined in another script or ModuleScript whose require form the scanner cannot resolve — simple one-hop `require` forms are resolved, and everything else is counted as unresolved;
+- flows that cross more than one call: the engine follows one same-script call and one resolved cross-module call, not an arbitrary chain;
+- dynamic `require` targets, asset-id/string requires, and aliases it cannot resolve. These are counted as **unresolved** in coverage, not treated as safe;
+- unsupported Rojo project features and any file skipped by the hostile-input caps.
+
+A finding marked `medium` confidence is a lead from the cross-file layer, not a measured claim. The L001 precision label still describes the 0.2.2 token engine; it is not a measurement of the cross-file extension.
+
+A place scan has a wall-clock budget: **120 seconds by default**, adjustable with
+`--time-budget SECONDS`. On expiry the scanner stops starting new scripts and returns a
+**partial** report; the headline and coverage say how many scripts were not analyzed. This
+is a fallback, not a clean result.
+
+The hand-written parser also bounds hostile source before it can recurse or allocate without
+end: **8 MB source**, **1,000,000 tokens**, **250,000 nodes**, **160 nested expressions**, and
+**15 seconds per script**. Any limit raises a counted parser fallback; it never crashes the
+scan. Exceeded Rojo project limits are likewise skipped with a reason.
 
 **Zero findings means those shapes were searched for and not found — it is not a statement
-that your game is secure.**
+that your game is secure.** A report with skipped files, an unresolved require, a parser
+fallback, or an exceeded time budget is not clean; read the coverage lines.
 
 ## Verify (optional)
 
@@ -121,6 +139,7 @@ onyx scan examples/demo_addcash_before.rbxlx --json out.json     # machine-reada
 onyx baseline examples/demo_addcash_before.rbxlx -o .onyx-baseline.json
 onyx scan examples/demo_addcash_before.rbxlx --baseline .onyx-baseline.json --fail-on-new
 onyx scan examples/demo_addcash_before.rbxlx --prompt             # paste-ready fix prompts
+onyx scan examples/rojo_demo                                      # Rojo project input
 ```
 
 `--fail-on-critical` is also available for a quick gate. `onyx verify --fail-on-confirmed`
@@ -128,11 +147,18 @@ exits 2 when it confirms an exploit, so both halves can gate CI.
 
 ## Formats
 
-`.rbxlx` (place) and `.rbxmx` (model) are the supported formats. A file saved as XML but named
+`.rbxlx` (place) and `.rbxmx` (model) are the supported XML formats. A file saved as XML but named
 `.rbxl` or `.rbxm` is read too. A **binary** `.rbxl` cannot be read; export it in Studio via
 *File → Save to File As…*, then pick **Roblox XML Place Files (`*.rbxlx`)** under *Save as type*.
-In Team Create, save **File → Download a Copy** first, open that copy, then save it as XML. Rojo
-project folders of plain `.lua`/`.luau` files are not scanned.
+In Team Create, save **File → Download a Copy** first, open that copy, then save it as XML.
+
+A directory containing `default.project.json` is read as a **Rojo project**:
+
+```
+onyx scan examples/rojo_demo
+```
+
+The mapper supports `.server.lua(u)`, `.client.lua(u)`, plain `.lua(u)` module scripts, `init.lua(u)`, `.meta.json`, `$path`, `$className` and nested projects. A source file above the per-file cap, a `$path` that escapes the project root, a symlink, or a file that is not a Luau script is refused or skipped with a coverage reason; it is never read silently. Unsupported project features are listed in the report. If a studio's layout is not supported, building it with `rojo build` to a `.rbxlx` first is still a valid path — but native project input is the supported workflow here.
 
 ## FAQ
 
@@ -142,7 +168,8 @@ project folders of plain `.lua`/`.luau` files are not scanned.
 leaves your computer.
 
 **What does "0 findings" mean?** Those specific shapes were searched for and not found. It
-does not mean secure.
+does not mean secure. For Rojo input, check the coverage lines: skipped files, parser fallbacks
+and unresolved requires make the result partial, not clean.
 
 **`onyx rules`?** Lists every rule id and what it catches, so a finding's `ONYX-L***` code can be
 looked up by rule id.
